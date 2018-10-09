@@ -30,6 +30,17 @@ if (LLVM_DG)
 				PRIVATE ${llvm_core})
 	add_dependencies(llvm-slicer gitversion)
 
+	add_executable(pse-slicer pse-slicer.cpp
+				  pse-slicer-opts.cpp pse-slicer-opts.h)
+	target_link_libraries(pse-slicer PRIVATE LLVMdg)
+	target_link_libraries(pse-slicer
+				PRIVATE ${llvm_irreader}
+				PRIVATE ${llvm_bitwriter}
+				PRIVATE ${llvm_analysis}
+				PRIVATE ${llvm_support}
+				PRIVATE ${llvm_core})
+	add_dependencies(pse-slicer gitversion)
+
 	add_executable(llvm-ps-dump llvm-ps-dump.cpp)
 	target_link_libraries(llvm-ps-dump PRIVATE LLVMpta)
 	target_link_libraries(llvm-ps-dump
@@ -60,8 +71,14 @@ if (LLVM_DG)
 				PRIVATE ${llvm_irreader}
 				PRIVATE ${llvm_support})
 
-	install(TARGETS llvm-dg-dump llvm-slicer
+	install(TARGETS 
+	  llvm-dg-dump llvm-ps-dump llvm-pta-compare llvm-rd-dump llvm-slicer pse-slicer llvm-to-source
 		RUNTIME DESTINATION bin)
+
+	install(FILES
+		display-slice.sh llvmdg-show llvm-to-source.py ps-show rd-show sliced-diff.sh
+		DESTINATION bin)
+
 endif (LLVM_DG)
 
 include_directories(../src)
