@@ -71,13 +71,6 @@ public:
         if (criteria_nodes.empty())
             return createNewMain();
 
-        // unmark this set of nodes after marking the relevant ones.
-        // Used to mimic the Weissers algorithm
-        std::set<dg::LLVMNode *> unmark;
-
-        if (_options.removeSlicingCriteria)
-            unmark = criteria_nodes;
-
         _dg->getCallSites(_options.additionalSlicingCriteria, &criteria_nodes);
 
         // do not slice __VERIFIER_assume at all
@@ -89,13 +82,9 @@ public:
 
         tm.start();
         for (dg::LLVMNode *start : criteria_nodes)
-            slice_id = slicer.mark(start, slice_id, _options.forwardSlicing);
+            slice_id = slicer.mark(start, slice_id, false);
 
         assert(slice_id != 0 && "Somethig went wrong when marking nodes");
-
-        // if we have some nodes in the unmark set, unmark them
-        for (dg::LLVMNode *nd : unmark)
-            nd->setSlice(0);
 
         tm.stop();
         tm.report("INFO: Finding dependent nodes took");

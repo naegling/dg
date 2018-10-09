@@ -15,14 +15,6 @@ struct SlicerOptions {
     std::vector<std::string> untouchedFunctions{};
     // FIXME: get rid of this once we got the secondary SC
     std::vector<std::string> additionalSlicingCriteria{};
-
-    // slice away also the slicing criteria nodes
-    // (if they are not dependent on themselves)
-    bool removeSlicingCriteria{false};
-
-    // do we perform forward slicing?
-    bool forwardSlicing{false};
-
     std::string slicingCriteria{};
     std::string inputFile{};
     std::string outputFile{};

@@ -58,7 +58,6 @@
 #include <fstream>
 
 #include "dg/llvm/LLVMDG2Dot.h"
-#include "llvm/LLVMDGAssemblyAnnotationWriter.h"
 
 using namespace dg;
 
@@ -66,231 +65,12 @@ using llvm::errs;
 using dg::analysis::LLVMPointerAnalysisOptions;
 using dg::analysis::LLVMReachingDefinitionsAnalysisOptions;
 
-using AnnotationOptsT
-    = dg::debug::LLVMDGAssemblyAnnotationWriter::AnnotationOptsT;
-
-
-llvm::cl::opt<bool> should_verify_module("dont-verify",
-    llvm::cl::desc("Verify sliced module (default=true)."),
-    llvm::cl::init(true), llvm::cl::cat(SlicingOpts));
-
-llvm::cl::opt<bool> remove_unused_only("remove-unused-only",
-    llvm::cl::desc("Only remove unused parts of module (default=false)."),
-    llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-
 llvm::cl::opt<bool> statistics("statistics",
     llvm::cl::desc("Print statistics about slicing (default=false)."),
     llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
 
-llvm::cl::opt<bool> dump_dg("dump-dg",
-    llvm::cl::desc("Dump dependence graph to dot (default=false)."),
-    llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-
-llvm::cl::opt<bool> dump_dg_only("dump-dg-only",
-    llvm::cl::desc("Only dump dependence graph to dot,"
-                   " do not slice the module (default=false)."),
-    llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-
-llvm::cl::opt<bool> dump_bb_only("dump-bb-only",
-    llvm::cl::desc("Only dump basic blocks of dependence graph to dot"
-                   " (default=false)."),
-    llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-
-llvm::cl::opt<std::string> annotationOpts("annotate",
-    llvm::cl::desc("Save annotated version of module as a text (.ll).\n"
-                   "(dd: data dependencies, cd:control dependencies,\n"
-                   "rd: reaching definitions, pta: points-to information,\n"
-                   "slice: comment out what is going to be sliced away, etc.)\n"
-                   "for more options, use comma separated list"),
-    llvm::cl::value_desc("val1,val2,..."), llvm::cl::init(""),
-    llvm::cl::cat(SlicingOpts));
-
-
 // mapping of AllocaInst to the names of C variables
 std::map<const llvm::Value *, std::string> valuesToVariables;
-
-static bool array_match(llvm::StringRef name, const char *names[])
-{
-    unsigned idx = 0;
-    while(names[idx]) {
-        if (name.equals(names[idx]))
-            return true;
-        ++idx;
-    }
-
-    return false;
-}
-
-static void replace_suffix(std::string& fl, const std::string& with)
-{
-    if (fl.size() > 2) {
-        if (fl.compare(fl.size() - 2, 2, ".o") == 0)
-            fl.replace(fl.end() - 2, fl.end(), with);
-        else if (fl.compare(fl.size() - 3, 3, ".bc") == 0)
-            fl.replace(fl.end() - 3, fl.end(), with);
-        else
-            fl += with;
-    } else {
-        fl += with;
-    }
-}
-
-
-class ModuleWriter {
-    const SlicerOptions& options;
-    llvm::Module *M;
-
-public:
-    ModuleWriter(const SlicerOptions& o,
-                 llvm::Module *m)
-    : options(o), M(m) {}
-
-    int saveModule(bool should_verify_module = true)
-    {
-        if (should_verify_module)
-            return verifyAndWriteModule();
-        else
-            return writeModule();
-    }
-
-    void removeUnusedFromModule()
-    {
-        bool fixpoint;
-
-        do {
-            fixpoint = _removeUnusedFromModule();
-        } while (fixpoint);
-    }
-
-    // after we slice the LLVM, we somethimes have troubles
-    // with function declarations:
-    //
-    //   Global is external, but doesn't have external or dllimport or weak linkage!
-    //   i32 (%struct.usbnet*)* @always_connected
-    //   invalid linkage type for function declaration
-    //
-    // This function makes the declarations external
-    void makeDeclarationsExternal()
-    {
-        using namespace llvm;
-
-        // iterate over all functions in module
-        for (auto& F : *M) {
-            if (F.size() == 0) {
-                // this will make sure that the linkage has right type
-                F.deleteBody();
-            }
-        }
-    }
-
-private:
-    bool writeModule() {
-        // compose name if not given
-        std::string fl;
-        if (!options.outputFile.empty()) {
-            fl = options.outputFile;
-        } else {
-            fl = options.inputFile;
-            replace_suffix(fl, ".sliced");
-        }
-
-        // open stream to write to
-        std::ofstream ofs(fl);
-        llvm::raw_os_ostream ostream(ofs);
-
-        // write the module
-        errs() << "INFO: saving sliced module to: " << fl.c_str() << "\n";
-
-    #if (LLVM_VERSION_MAJOR > 6)
-        llvm::WriteBitcodeToFile(*M, ostream);
-    #else
-        llvm::WriteBitcodeToFile(M, ostream);
-    #endif
-
-        return true;
-    }
-
-    bool verifyModule()
-    {
-        // the verifyModule function returns false if there
-        // are no errors
-
-#if ((LLVM_VERSION_MAJOR >= 4) || (LLVM_VERSION_MINOR >= 5))
-        return !llvm::verifyModule(*M, &llvm::errs());
-#else
-       return !llvm::verifyModule(*M, llvm::PrintMessageAction);
-#endif
-    }
-
-
-    int verifyAndWriteModule()
-    {
-        if (!verifyModule()) {
-            errs() << "ERR: Verifying module failed, the IR is not valid\n";
-            errs() << "INFO: Saving anyway so that you can check it\n";
-            return 1;
-        }
-
-        if (!writeModule()) {
-            errs() << "Saving sliced module failed\n";
-            return 1;
-        }
-
-        // exit code
-        return 0;
-    }
-
-    bool _removeUnusedFromModule()
-    {
-        using namespace llvm;
-        // do not slice away these functions no matter what
-        // FIXME do it a vector and fill it dynamically according
-        // to what is the setup (like for sv-comp or general..)
-        const char *keep[] = {options.dgOptions.entryFunction.c_str(),
-                              "klee_assume", nullptr};
-
-        // when erasing while iterating the slicer crashes
-        // so set the to be erased values into container
-        // and then erase them
-        std::set<Function *> funs;
-        std::set<GlobalVariable *> globals;
-        std::set<GlobalAlias *> aliases;
-
-        for (auto I = M->begin(), E = M->end(); I != E; ++I) {
-            Function *func = &*I;
-            if (array_match(func->getName(), keep))
-                continue;
-
-            // if the function is unused or we haven't constructed it
-            // at all in dependence graph, we can remove it
-            // (it may have some uses though - like when one
-            // unused func calls the other unused func
-            if (func->hasNUses(0))
-                funs.insert(func);
-        }
-
-        for (auto I = M->global_begin(), E = M->global_end(); I != E; ++I) {
-            GlobalVariable *gv = &*I;
-            if (gv->hasNUses(0))
-                globals.insert(gv);
-        }
-
-        for (GlobalAlias& ga : M->getAliasList()) {
-            if (ga.hasNUses(0))
-                aliases.insert(&ga);
-        }
-
-        for (Function *f : funs)
-            f->eraseFromParent();
-        for (GlobalVariable *gv : globals)
-            gv->eraseFromParent();
-        for (GlobalAlias *ga : aliases)
-            ga->eraseFromParent();
-
-        return (!funs.empty() || !globals.empty() || !aliases.empty());
-    }
-
-};
 
 static void maybe_print_statistics(llvm::Module *M, const char *prefix = nullptr)
 {
@@ -323,104 +103,6 @@ static void maybe_print_statistics(llvm::Module *M, const char *prefix = nullptr
     errs() << "Globals/Functions/Blocks/Instr.: "
            << gnum << " " << fnum << " " << bnum << " " << inum << "\n";
 }
-
-class DGDumper {
-    const SlicerOptions& options;
-    LLVMDependenceGraph *dg;
-    bool bb_only{false};
-    uint32_t dump_opts{debug::PRINT_DD | debug::PRINT_CD | debug::PRINT_USE};
-
-public:
-    DGDumper(const SlicerOptions& opts,
-             LLVMDependenceGraph *dg,
-             bool bb_only = false,
-             uint32_t dump_opts = debug::PRINT_DD | debug::PRINT_CD | debug::PRINT_USE)
-    : options(opts), dg(dg), bb_only(bb_only), dump_opts(dump_opts) {}
-
-    void dumpToDot(const char *suffix = nullptr) {
-        // compose new name
-        std::string fl(options.inputFile);
-        if (suffix)
-            replace_suffix(fl, suffix);
-        else
-            replace_suffix(fl, ".dot");
-
-        errs() << "INFO: Dumping DG to to " << fl << "\n";
-
-        if (bb_only) {
-            debug::LLVMDGDumpBlocks dumper(dg, dump_opts, fl.c_str());
-            dumper.dump();
-        } else {
-            debug::LLVMDG2Dot dumper(dg, dump_opts, fl.c_str());
-            dumper.dump();
-        }
-    }
-};
-
-class ModuleAnnotator {
-    const SlicerOptions& options;
-    LLVMDependenceGraph *dg;
-    AnnotationOptsT annotationOptions;
-
-public:
-    ModuleAnnotator(const SlicerOptions& o,
-                    LLVMDependenceGraph *dg,
-                    AnnotationOptsT annotO)
-    : options(o), dg(dg), annotationOptions(annotO) {}
-
-    bool shouldAnnotate() const { return annotationOptions != 0; }
-
-    void annotate(const std::set<LLVMNode *> *criteria = nullptr)
-    {
-        // compose name
-        std::string fl(options.inputFile);
-        fl.replace(fl.end() - 3, fl.end(), "-debug.ll");
-
-        // open stream to write to
-        std::ofstream ofs(fl);
-        llvm::raw_os_ostream outputstream(ofs);
-
-        std::string module_comment =
-        "; -- Generated by llvm-slicer --\n"
-        ";   * slicing criteria: '" + options.slicingCriteria + "'\n" +
-        ";   * forward slice: '" + std::to_string(options.forwardSlicing) + "'\n" +
-        ";   * remove slicing criteria: '"
-             + std::to_string(options.removeSlicingCriteria) + "'\n" +
-        ";   * undefined are pure: '"
-             + std::to_string(options.dgOptions.RDAOptions.undefinedArePure) + "'\n" +
-        ";   * pointer analysis: ";
-        if (options.dgOptions.PTAOptions.analysisType
-                == LLVMPointerAnalysisOptions::AnalysisType::fi)
-            module_comment += "flow-insensitive\n";
-        else if (options.dgOptions.PTAOptions.analysisType
-                    == LLVMPointerAnalysisOptions::AnalysisType::fs)
-            module_comment += "flow-sensitive\n";
-        else if (options.dgOptions.PTAOptions.analysisType
-                    == LLVMPointerAnalysisOptions::AnalysisType::inv)
-            module_comment += "flow-sensitive with invalidate\n";
-
-        module_comment+= ";   * PTA field sensitivity: ";
-        if (options.dgOptions.PTAOptions.fieldSensitivity == Offset::UNKNOWN)
-            module_comment += "full\n\n";
-        else
-            module_comment
-                += std::to_string(*options.dgOptions.PTAOptions.fieldSensitivity)
-                   + "\n\n";
-
-        errs() << "INFO: Saving IR with annotations to " << fl << "\n";
-        auto annot
-            = new dg::debug::LLVMDGAssemblyAnnotationWriter(annotationOptions,
-                                                            dg->getPTA(),
-                                                            dg->getRDA(),
-                                                            criteria);
-        annot->emitModuleComment(std::move(module_comment));
-        llvm::Module *M = dg->getModule();
-        M->print(outputstream, annot);
-
-        delete annot;
-    }
-};
-
 
 static std::vector<std::string> splitList(const std::string& opt, char sep = ',')
 {
@@ -672,29 +354,6 @@ static std::set<LLVMNode *> getSlicingCriteriaNodes(LLVMDependenceGraph& dg,
     return nodes;
 }
 
-static AnnotationOptsT parseAnnotationOptions(const std::string& annot)
-{
-    if (annot.empty())
-        return {};
-
-    AnnotationOptsT opts{};
-    std::vector<std::string> lst = splitList(annot);
-    for (const std::string& opt : lst) {
-        if (opt == "dd")
-            opts |= AnnotationOptsT::ANNOTATE_DD;
-        else if (opt == "cd")
-            opts |= AnnotationOptsT::ANNOTATE_CD;
-        else if (opt == "rd")
-            opts |= AnnotationOptsT::ANNOTATE_RD;
-        else if (opt == "pta")
-            opts |= AnnotationOptsT::ANNOTATE_PTR;
-        else if (opt == "slice" || opt == "sl" || opt == "slicer")
-            opts |= AnnotationOptsT::ANNOTATE_SLICE;
-    }
-
-    return opts;
-}
-
 std::unique_ptr<llvm::Module> parseModule(llvm::LLVMContext& context,
                                           const SlicerOptions& options)
 {
@@ -736,10 +395,6 @@ int main(int argc, char *argv[])
 
     SlicerOptions options = parseSlicerOptions(argc, argv);
 
-    // dump_dg_only implies dumg_dg
-    if (dump_dg_only)
-        dump_dg = true;
-
     llvm::LLVMContext context;
     std::unique_ptr<llvm::Module> M = parseModule(context, options);
     if (!M) {
@@ -754,17 +409,6 @@ int main(int argc, char *argv[])
     }
 
     maybe_print_statistics(M.get(), "Statistics before ");
-
-    // remove unused from module, we don't need that
-    ModuleWriter writer(options, M.get());
-    writer.removeUnusedFromModule();
-
-    if (remove_unused_only) {
-        errs() << "INFO: removed unused parts of module, exiting...\n";
-        maybe_print_statistics(M.get(), "Statistics after ");
-
-        return writer.saveModule(should_verify_module);
-    }
 
     /// ---------------
     // slice the code
@@ -790,30 +434,14 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    ModuleAnnotator annotator(options, &slicer.getDG(),
-                              parseAnnotationOptions(annotationOpts));
-
-    auto criteria_nodes = getSlicingCriteriaNodes(slicer.getDG(),
-                                                  options.slicingCriteria);
+    auto criteria_nodes = getSlicingCriteriaNodes(slicer.getDG(), options.slicingCriteria);
     if (criteria_nodes.empty()) {
         llvm::errs() << "Did not find slicing criterioa: '"
                      << options.slicingCriteria << "'\n";
     }
 
     // mark nodes that are going to be in the slice
-    slicer.mark(criteria_nodes, annotator.shouldAnnotate());
-
-    // print debugging llvm IR if user asked for it
-    if (annotator.shouldAnnotate())
-        annotator.annotate(&criteria_nodes);
-
-    DGDumper dumper(options, &slicer.getDG(), dump_bb_only);
-    if (dump_dg) {
-        dumper.dumpToDot();
-
-        if (dump_dg_only)
-            return 0;
-    }
+    slicer.mark(criteria_nodes, true);
 
     // slice the graph
     if (!slicer.slice()) {
@@ -821,18 +449,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (dump_dg) {
-        dumper.dumpToDot(".sliced.dot");
-    }
-
-    // remove unused from module again, since slicing
-    // could and probably did make some other parts unused
-    writer.removeUnusedFromModule();
-
-    // fix linkage of declared functions (if needs to be fixed)
-    writer.makeDeclarationsExternal();
-
     maybe_print_statistics(M.get(), "Statistics after ");
-
-    return writer.saveModule(should_verify_module);
+    return 0;
 }

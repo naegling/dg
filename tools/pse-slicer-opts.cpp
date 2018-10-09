@@ -1,3 +1,4 @@
+
 #include "dg/analysis/Offset.h"
 #include "dg/llvm/LLVMDependenceGraph.h"
 #include "dg/llvm/LLVMDependenceGraphBuilder.h"
@@ -37,12 +38,6 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
                        "e.g. -c foo,5:x,:glob\n"), llvm::cl::value_desc("crit"),
                        llvm::cl::init(""), llvm::cl::cat(SlicingOpts));
     
-    llvm::cl::opt<bool> removeSlicingCriteria("remove-slicing-criteria",
-        llvm::cl::desc("By default, slicer keeps also calls to the slicing criteria\n"
-                       "in the sliced program. This switch makes slicer to remove\n"
-                       "also the calls (i.e. behave like Weisser's algorithm)"),
-                       llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-    
     llvm::cl::opt<uint64_t> ptaFieldSensitivity("pta-field-sensitive",
         llvm::cl::desc("Make PTA field sensitive/insensitive. The offset in a pointer\n"
                        "is cropped to Offset::UNKNOWN when it is greater than N bytes.\n"
@@ -64,20 +59,13 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
         llvm::cl::desc("Entry function of the program\n"),
                        llvm::cl::init("main"), llvm::cl::cat(SlicingOpts));
     
-    llvm::cl::opt<bool> forwardSlicing("forward",
-        llvm::cl::desc("Perform forward slicing\n"),
-                       llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-    
     llvm::cl::opt<LLVMPointerAnalysisOptions::AnalysisType> ptaType("pta",
         llvm::cl::desc("Choose pointer analysis to use:"),
         llvm::cl::values(
             clEnumValN(LLVMPointerAnalysisOptions::AnalysisType::fi, "fi", "Flow-insensitive PTA (default)"),
             clEnumValN(LLVMPointerAnalysisOptions::AnalysisType::fs, "fs", "Flow-sensitive PTA"),
             clEnumValN(LLVMPointerAnalysisOptions::AnalysisType::inv, "inv", "PTA with invalidate nodes")
-    #if LLVM_VERSION_MAJOR < 4
-            , nullptr
-    #endif
-            ),
+        ),
         llvm::cl::init(LLVMPointerAnalysisOptions::AnalysisType::fi), llvm::cl::cat(SlicingOpts));
     
     llvm::cl::opt<LLVMReachingDefinitionsAnalysisOptions::AnalysisType> rdaType("rda",
@@ -85,10 +73,7 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
         llvm::cl::values(
             clEnumValN(LLVMReachingDefinitionsAnalysisOptions::AnalysisType::dense, "dense", "Dense RDA (default)"),
             clEnumValN(LLVMReachingDefinitionsAnalysisOptions::AnalysisType::ss,    "ss",    "Semi-sparse RDA")
-    #if LLVM_VERSION_MAJOR < 4
-            , nullptr
-    #endif
-            ),
+        ),
         llvm::cl::init(LLVMReachingDefinitionsAnalysisOptions::AnalysisType::dense), llvm::cl::cat(SlicingOpts));
     
     llvm::cl::opt<dg::CD_ALG> cdAlgorithm("cd-alg",
@@ -96,27 +81,15 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
         llvm::cl::values(
             clEnumValN(dg::CD_ALG::CLASSIC , "classic", "Ferrante's algorithm (default)"),
             clEnumValN(dg::CD_ALG::CONTROL_EXPRESSION, "ce", "Control expression based (experimental)")
-    #if LLVM_VERSION_MAJOR < 4
-            , nullptr
-    #endif
-             ),
+        ),
         llvm::cl::init(dg::CD_ALG::CLASSIC), llvm::cl::cat(SlicingOpts));
     
     ////////////////////////////////////
     // ===-- End of the options --=== //
     ////////////////////////////////////
 
-    // hide all options except ours options
-    // this method is available since LLVM 3.7
-#if ((LLVM_VERSION_MAJOR > 3)\
-      || ((LLVM_VERSION_MAJOR == 3) && (LLVM_VERSION_MINOR >= 7)))
     llvm::cl::HideUnrelatedOptions(SlicingOpts);
-#endif
-# if ((LLVM_VERSION_MAJOR >= 6))
     llvm::cl::SetVersionPrinter([](llvm::raw_ostream&){ printf("%s\n", GIT_VERSION); });
-#else
-    llvm::cl::SetVersionPrinter([](){ printf("%s\n", GIT_VERSION); });
-#endif
     llvm::cl::ParseCommandLineOptions(argc, argv);
 
     /// Fill the structure
@@ -125,13 +98,10 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
     options.inputFile = inputFile;
     options.outputFile = outputFile;
     options.slicingCriteria = slicingCriteria;
-    options.removeSlicingCriteria = removeSlicingCriteria;
-    options.forwardSlicing = forwardSlicing;
 
     options.dgOptions.entryFunction = entryFunction;
     options.dgOptions.PTAOptions.entryFunction = entryFunction;
-    options.dgOptions.PTAOptions.fieldSensitivity
-                                    = dg::analysis::Offset(ptaFieldSensitivity);
+    options.dgOptions.PTAOptions.fieldSensitivity = dg::analysis::Offset(ptaFieldSensitivity);
     options.dgOptions.PTAOptions.analysisType = ptaType;
 
     options.dgOptions.RDAOptions.entryFunction = entryFunction;
