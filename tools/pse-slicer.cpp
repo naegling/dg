@@ -65,44 +65,8 @@ using llvm::errs;
 using dg::analysis::LLVMPointerAnalysisOptions;
 using dg::analysis::LLVMReachingDefinitionsAnalysisOptions;
 
-llvm::cl::opt<bool> statistics("statistics",
-    llvm::cl::desc("Print statistics about slicing (default=false)."),
-    llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
-
 // mapping of AllocaInst to the names of C variables
 std::map<const llvm::Value *, std::string> valuesToVariables;
-
-static void maybe_print_statistics(llvm::Module *M, const char *prefix = nullptr)
-{
-    if (!statistics)
-        return;
-
-    using namespace llvm;
-    uint64_t inum, bnum, fnum, gnum;
-    inum = bnum = fnum = gnum = 0;
-
-    for (auto I = M->begin(), E = M->end(); I != E; ++I) {
-        // don't count in declarations
-        if (I->size() == 0)
-            continue;
-
-        ++fnum;
-
-        for (const BasicBlock& B : *I) {
-            ++bnum;
-            inum += B.size();
-        }
-    }
-
-    for (auto I = M->global_begin(), E = M->global_end(); I != E; ++I)
-        ++gnum;
-
-    if (prefix)
-        errs() << prefix;
-
-    errs() << "Globals/Functions/Blocks/Instr.: "
-           << gnum << " " << fnum << " " << bnum << " " << inum << "\n";
-}
 
 static std::vector<std::string> splitList(const std::string& opt, char sep = ',')
 {
@@ -408,8 +372,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    maybe_print_statistics(M.get(), "Statistics before ");
-
     /// ---------------
     // slice the code
     /// ---------------
@@ -449,6 +411,5 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    maybe_print_statistics(M.get(), "Statistics after ");
     return 0;
 }
