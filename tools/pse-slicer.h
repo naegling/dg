@@ -27,6 +27,8 @@
 #include "pse-slicer-opts.h"
 #include "TimeMeasure.h"
 
+
+
 /// --------------------------------------------------------------------
 //   - Slicer class -
 //
@@ -45,58 +47,65 @@ class Slicer {
 
 public:
   Slicer(llvm::Module *mod, const SlicerOptions &opts)
-      : M(mod), _options(opts),
-        _builder(mod, _options.dgOptions) { assert(mod && "Need module"); }
+      : M(mod), _options(opts), _builder(mod, _options.dgOptions) {
+    assert(mod && "Need module");
+    _dg = _builder.computeDependencies(std::move(_dg));
+  }
 
   const dg::LLVMDependenceGraph &getDG() const { return *_dg.get(); }
   dg::LLVMDependenceGraph &getDG() { return *_dg.get(); }
 
   // mark the nodes from the slice
-  bool mark(std::set<dg::LLVMNode *> &criteria_nodes,
-            bool always_compute_deps = false) {
+  bool mark(dg::LLVMNode * criteria_node) {
     assert(_dg && "mark() called without the dependence graph built");
 
     dg::debug::TimeMeasure tm;
 
-    // if we found slicing criterion, compute the rest
-    // of the graph. Otherwise just slice away the whole graph
-    if (!criteria_nodes.empty() || always_compute_deps)
-      _dg = _builder.computeDependencies(std::move(_dg));
-
-    // don't go through the graph when we know the result:
-    // only empty main will stay there. Just delete the body
-    // of main and keep the return value
-    if (criteria_nodes.empty())
-      return createNewMain();
-
-    _dg->getCallSites(_options.additionalSlicingCriteria, &criteria_nodes);
-
-    // do not slice __VERIFIER_assume at all
-    // FIXME: do this optional
-    for (auto &funcName : _options.untouchedFunctions)
-      slicer.keepFunctionUntouched(funcName.c_str());
-
     slice_id = 0xdead;
 
     tm.start();
-    for (dg::LLVMNode *start : criteria_nodes)
-      slice_id = slicer.mark(start, slice_id, false);
+    slice_id = slicer.mark(criteria_node, slice_id, false);
 
-    assert(slice_id != 0 && "Somethig went wrong when marking nodes");
+    assert(slice_id != 0 && "Something went wrong when marking nodes");
 
     tm.stop();
     tm.report("INFO: Finding dependent nodes took");
-
     return true;
   }
 
-  bool slice() {
+  bool resetSlices() {
+    return setAllSlice(0);
+  }
+
+  bool setAllSlice(uint32_t sl_id) {
+
+    // for all nodes, setSlice(sl_id)
+    for (auto pair1: dg::getConstructedFunctions()) {
+      dg::LLVMDependenceGraph *subdg = pair1.second;
+      for (auto pair2: subdg->getBlocks()) {
+         auto bb = pair2.second;
+         bb->setSlice(sl_id);
+         for (auto pair3: *subdg) {
+           dg::LLVMNode *n = pair3.second;
+           n->setSlice(sl_id);
+         }
+      }
+    }
+    return true;
+  }
+
+
+  // now slice away instructions from BBlocks that left
+//  for (auto I = graph->begin(), E = graph->end(); I != E;) {
+
+
+    bool slice() {
     assert(slice_id != 0 && "Must run mark() method before slice()");
 
     dg::debug::TimeMeasure tm;
 
     tm.start();
-    slicer.slice(_dg.get(), nullptr, slice_id);
+//    slicer.slice(_dg.get(), nullptr, slice_id);
 
     tm.stop();
     tm.report("INFO: Slicing dependence graph took");
@@ -118,43 +127,7 @@ public:
 
     return true;
   }
-private:
 
-  ///
-  // Create new empty main. If 'call_entry' is set to true, then
-  // call the entry function from the new main, otherwise the
-  // main is going to be empty
-  bool createNewMain() {
-    llvm::Function *main_func = M->getFunction("main");
-    if (!main_func) {
-      llvm::errs() << "No main function found in module. This seems like bug since\n"
-                      "here we should have the graph build from main\n";
-      return false;
-    }
-
-    // delete old function body
-    main_func->deleteBody();
-
-    // create new function body that just returns
-    llvm::LLVMContext &ctx = M->getContext();
-    llvm::BasicBlock *blk = llvm::BasicBlock::Create(ctx, "entry", main_func);
-
-    if (_options.dgOptions.entryFunction != "main") {
-      llvm::Function *entry = M->getFunction(_options.dgOptions.entryFunction);
-      assert(entry && "The entry function is not present in the module");
-
-      // TODO: we should set the arguments to undef
-      llvm::CallInst::Create(entry, "entry", blk);
-    }
-
-    llvm::Type *Ty = main_func->getReturnType();
-    llvm::Value *retval = nullptr;
-    if (Ty->isIntegerTy())
-      retval = llvm::ConstantInt::get(Ty, 0);
-    llvm::ReturnInst::Create(ctx, retval, blk);
-
-    return true;
-  }
 };
 
 #endif // _DG_TOOL_PSE_SLICER_H_

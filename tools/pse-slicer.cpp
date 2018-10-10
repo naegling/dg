@@ -13,7 +13,7 @@
 
 #include <llvm/Config/llvm-config.h>
 
-#if (LLVM_VERSION_MAJOR < 3)
+#if (LLVM_VERSION_MAJOR < 6)
 #error "Unsupported version of LLVM"
 #endif
 
@@ -29,13 +29,8 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
-#if LLVM_VERSION_MAJOR >= 4
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
-#else
-#include <llvm/Bitcode/ReaderWriter.h>
-#endif
-
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/Support/SourceMgr.h>
@@ -309,14 +304,8 @@ static std::set<LLVMNode *> getSlicingCriteriaNodes(LLVMDependenceGraph &dg,
 std::unique_ptr<llvm::Module> parseModule(llvm::LLVMContext &context,
                                           const SlicerOptions &options) {
   llvm::SMDiagnostic SMD;
-
-#if ((LLVM_VERSION_MAJOR == 3) && (LLVM_VERSION_MINOR <= 5))
-  auto _M = llvm::ParseIRFile(options.inputFile, SMD, context);
-  auto M = std::unique_ptr<llvm::Module>(_M);
-#else
   auto M = llvm::parseIRFile(options.inputFile, SMD, context);
   // _M is unique pointer, we need to get Module *
-#endif
 
   if (!M) {
     SMD.print("llvm-slicer", llvm::errs());
@@ -328,19 +317,15 @@ std::unique_ptr<llvm::Module> parseModule(llvm::LLVMContext &context,
 void setupStackTraceOnError(int argc, char *argv[]) {
 #ifndef USING_SANITIZERS
 
-#if LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR < 9
-  llvm::sys::PrintStackTraceOnErrorSignal();
-#else
   llvm::sys::PrintStackTraceOnErrorSignal(llvm::StringRef());
-#endif
   llvm::PrettyStackTraceProgram X(argc, argv);
 
 #endif // USING_SANITIZERS
 }
 
 int main(int argc, char *argv[]) {
-  setupStackTraceOnError(argc, argv);
 
+  setupStackTraceOnError(argc, argv);
   SlicerOptions options = parseSlicerOptions(argc, argv);
 
   llvm::LLVMContext context;
@@ -360,20 +345,6 @@ int main(int argc, char *argv[]) {
   // slice the code
   /// ---------------
 
-  // we do not want to slice away any assumptions
-  // about the code
-  // FIXME: do this optional only for SV-COMP
-  options.additionalSlicingCriteria = {
-      "__VERIFIER_assume",
-      "__VERIFIER_exit",
-      "klee_assume",
-  };
-
-  options.untouchedFunctions = {
-      "__VERIFIER_assume",
-      "__VERIFIER_exit"
-  };
-
   Slicer slicer(M.get(), options);
   if (!slicer.buildDG()) {
     errs() << "ERROR: Failed building DG\n";
@@ -387,12 +358,10 @@ int main(int argc, char *argv[]) {
   }
 
   // mark nodes that are going to be in the slice
-  slicer.mark(criteria_nodes, true);
-
-  // slice the graph
-  if (!slicer.slice()) {
-    errs() << "ERROR: Slicing failed\n";
-    return 1;
+  for (auto node : criteria_nodes) {
+    slicer.resetSlices();
+    slicer.mark(node);
+    slicer.slice();
   }
 
   return 0;

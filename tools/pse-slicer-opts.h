@@ -11,10 +11,6 @@ extern llvm::cl::OptionCategory SlicingOpts;
 // Object representing options for slicer
 struct SlicerOptions {
   dg::llvmdg::LLVMDependenceGraphOptions dgOptions{};
-
-  std::vector<std::string> untouchedFunctions{};
-  // FIXME: get rid of this once we got the secondary SC
-  std::vector<std::string> additionalSlicingCriteria{};
   std::string slicingCriteria{};
   std::string inputFile{};
   std::string outputFile{};
