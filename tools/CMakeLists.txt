@@ -2,6 +2,10 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # these tools can access the private headers
 include_directories(${CMAKE_SOURCE_DIR}/lib)
 
+find_package(Boost REQUIRED COMPONENTS filesystem)
+	
+
+
 if (LLVM_DG)
 	# generate a git-version.h with a HEAD commit hash tag
 	# (if it changed)
@@ -30,10 +34,22 @@ if (LLVM_DG)
 				PRIVATE ${llvm_core})
 	add_dependencies(llvm-slicer gitversion)
 
+	add_executable(trial-slicer trial-slicer.cpp
+				   llvm-slicer-opts.cpp llvm-slicer-opts.h)
+	target_link_libraries(trial-slicer PRIVATE LLVMdg)
+	target_link_libraries(trial-slicer
+				PRIVATE ${llvm_irreader}
+				PRIVATE ${llvm_bitwriter}
+				PRIVATE ${llvm_analysis}
+				PRIVATE ${llvm_support}
+				PRIVATE ${llvm_core})
+	add_dependencies(trial-slicer gitversion)
+
 	add_executable(pse-slicer pse-slicer.cpp
-				  pse-slicer-opts.cpp pse-slicer-opts.h)
+				  jsoncpp.cpp pse-slicer-opts.cpp pse-slicer-opts.h)
 	target_link_libraries(pse-slicer PRIVATE LLVMdg)
 	target_link_libraries(pse-slicer
+				PRIVATE Boost::filesystem
 				PRIVATE ${llvm_irreader}
 				PRIVATE ${llvm_bitwriter}
 				PRIVATE ${llvm_analysis}

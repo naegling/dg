@@ -11,9 +11,9 @@ extern llvm::cl::OptionCategory SlicingOpts;
 // Object representing options for slicer
 struct SlicerOptions {
   dg::llvmdg::LLVMDependenceGraphOptions dgOptions{};
-  std::string slicingCriteria{};
   std::string inputFile{};
   std::string outputFile{};
+  std::string testDirectory{};
 };
 
 ///

@@ -28,7 +28,7 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
   llvm::cl::opt<std::string> inputFile(llvm::cl::Positional, llvm::cl::Required,
                                        llvm::cl::desc("<input file>"), llvm::cl::init(""), llvm::cl::cat(SlicingOpts));
 
-  llvm::cl::opt<std::string> slicingCriteria("c", llvm::cl::Required,
+  llvm::cl::opt<std::string> slicingCriteria("c",
                                              llvm::cl::desc("Slice with respect to the call-sites of a given function\n"
                                                             "i. e.: '-c foo' or '-c __assert_fail'. Special value is a 'ret'\n"
                                                             "in which case the slice is taken with respect to the return value\n"
@@ -62,6 +62,10 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
   llvm::cl::opt<std::string> entryFunction("entry",
                                            llvm::cl::desc("Entry function of the program\n"),
                                            llvm::cl::init("main"), llvm::cl::cat(SlicingOpts));
+
+  llvm::cl::opt<std::string> testDirectory("tests",
+                                           llvm::cl::desc("directory containing test case json files\n"),
+                                           llvm::cl::init("klee-out"), llvm::cl::cat(SlicingOpts));
 
   llvm::cl::opt<LLVMPointerAnalysisOptions::AnalysisType> ptaType("pta",
                                                                   llvm::cl::desc("Choose pointer analysis to use:"),
@@ -121,7 +125,7 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
 
   options.inputFile = inputFile;
   options.outputFile = outputFile;
-  options.slicingCriteria = slicingCriteria;
+  options.testDirectory = testDirectory;
 
   options.dgOptions.entryFunction = entryFunction;
   options.dgOptions.PTAOptions.entryFunction = entryFunction;

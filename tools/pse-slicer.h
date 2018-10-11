@@ -49,7 +49,6 @@ public:
   Slicer(llvm::Module *mod, const SlicerOptions &opts)
       : M(mod), _options(opts), _builder(mod, _options.dgOptions) {
     assert(mod && "Need module");
-    _dg = _builder.computeDependencies(std::move(_dg));
   }
 
   const dg::LLVMDependenceGraph &getDG() const { return *_dg.get(); }
@@ -125,6 +124,7 @@ public:
       return false;
     }
 
+    _dg = _builder.computeDependencies(std::move(_dg));
     return true;
   }
 
