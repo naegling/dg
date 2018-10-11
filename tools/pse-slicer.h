@@ -45,6 +45,11 @@ class Slicer {
   dg::LLVMSlicer slicer;
   uint32_t slice_id = 0;
 
+  std::map<unsigned,dg::BBlock<dg::LLVMNode> *> mapMarkers;
+  std::map<unsigned,dg::LLVMNode*> mapKleeIDs;
+
+  void constructMaps();
+
 public:
   Slicer(llvm::Module *mod, const SlicerOptions &opts)
       : M(mod), _options(opts), _builder(mod, _options.dgOptions) {
@@ -93,11 +98,6 @@ public:
     return true;
   }
 
-
-  // now slice away instructions from BBlocks that left
-//  for (auto I = graph->begin(), E = graph->end(); I != E;) {
-
-
     bool slice() {
     assert(slice_id != 0 && "Must run mark() method before slice()");
 
@@ -112,19 +112,17 @@ public:
     dg::analysis::SlicerStatistics &st = slicer.getStatistics();
     llvm::errs() << "INFO: Sliced away " << st.nodesRemoved
                  << " from " << st.nodesTotal << " nodes in DG\n";
-
     return true;
   }
 
   bool buildDG() {
     _dg = std::move(_builder.constructCFGOnly());
-
     if (!_dg) {
       llvm::errs() << "Building the dependence graph failed!\n";
       return false;
     }
-
     _dg = _builder.computeDependencies(std::move(_dg));
+    constructMaps();
     return true;
   }
 

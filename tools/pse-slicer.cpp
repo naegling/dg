@@ -33,6 +33,7 @@
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/CallSite.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/FormattedStream.h>
@@ -65,6 +66,55 @@ using llvm::errs;
 using llvm::outs;
 using dg::analysis::LLVMPointerAnalysisOptions;
 using dg::analysis::LLVMReachingDefinitionsAnalysisOptions;
+
+void Slicer::constructMaps() {
+
+  unsigned int mdkline = M->getMDKindID("klee.assemblyLine");
+
+  for (auto pair1: dg::getConstructedFunctions()) {
+
+    dg::LLVMDependenceGraph *subdg = pair1.second;
+    for (auto pair2: subdg->getBlocks()) {
+      auto bb = pair2.second;
+      for (auto pair3: *subdg) {
+        dg::LLVMNode *n = pair3.second;
+        if (llvm::Instruction *i = llvm::dyn_cast<llvm::Instruction>(pair3.first)) {
+
+          // look for klee line number metadata
+          if (llvm::MDNode *md = i->getMetadata(mdkline)) {
+            std::string line = llvm::cast<llvm::MDString>(md->getOperand(0))->getString().str();
+            mapKleeIDs[std::stoi(line)] = pair3.second;
+          }
+
+          // check for a marker call
+          if (llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(i)) {
+            llvm::CallSite cs(ci);
+            const llvm::Function *targetFn = cs.getCalledFunction();
+
+            // two arguments returning void
+            if (targetFn->arg_size() == 2 && targetFn->getReturnType()->isVoidTy()) {
+
+              // check the name
+              std::string targetName = targetFn->getName().str();
+              boost::algorithm::to_lower(targetName);
+              if (targetName == "mark") {
+
+                const llvm::Constant *arg0 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(0));
+                const llvm::Constant *arg1 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(1));
+                if ((arg0 != nullptr) && (arg1 != nullptr)) {
+                  unsigned fnID = (unsigned) arg0->getUniqueInteger().getZExtValue();
+                  unsigned bbID = (unsigned) arg1->getUniqueInteger().getZExtValue();
+                  unsigned marker = (fnID * 1000) + bbID;
+                  mapMarkers[marker] = bb;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 std::unique_ptr<llvm::Module> parseModule(llvm::LLVMContext &context,
                                           const SlicerOptions &options) {
