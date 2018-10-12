@@ -45,8 +45,8 @@ class Slicer {
   dg::LLVMSlicer slicer;
   uint32_t slice_id = 0;
 
-  std::map<unsigned,dg::BBlock<dg::LLVMNode> *> mapMarkers;
-  std::map<unsigned,dg::LLVMNode*> mapKleeIDs;
+  std::map<unsigned,const llvm::BasicBlock*> mapMarkers;
+  std::map<unsigned,const llvm::Instruction*> mapKleeIDs;
 
   void constructMaps();
 
@@ -56,58 +56,59 @@ public:
     assert(mod && "Need module");
   }
 
+  void setSliceID(uint32_t s) { slice_id = s; }
+
   const dg::LLVMDependenceGraph &getDG() const { return *_dg.get(); }
   dg::LLVMDependenceGraph &getDG() { return *_dg.get(); }
 
   // mark the nodes from the slice
-  bool mark(dg::LLVMNode * criteria_node) {
+  bool mark(unsigned klee_id) {
+
     assert(_dg && "mark() called without the dependence graph built");
 
-    dg::debug::TimeMeasure tm;
+    // find the referenced instruction and dg node
+    auto itr = mapKleeIDs.find(klee_id);
+    if (itr != mapKleeIDs.end()) {
 
-    slice_id = 0xdead;
+      const llvm::Instruction *i = itr->second;
+      dg::LLVMNode *criteria = _dg->getNode(const_cast<llvm::Instruction*>(i));
 
-    tm.start();
-    slice_id = slicer.mark(criteria_node, slice_id, false);
+      // start marking
+//      dg::debug::TimeMeasure tm;
 
-    assert(slice_id != 0 && "Something went wrong when marking nodes");
+//      tm.start();
+      slice_id = slicer.mark(criteria, slice_id, false);
 
-    tm.stop();
-    tm.report("INFO: Finding dependent nodes took");
-    return true;
-  }
+      assert(slice_id != 0 && "Something went wrong when marking nodes");
 
-  bool resetSlices() {
-    return setAllSlice(0);
-  }
-
-  bool setAllSlice(uint32_t sl_id) {
-
-    // for all nodes, setSlice(sl_id)
-    for (auto pair1: dg::getConstructedFunctions()) {
-      dg::LLVMDependenceGraph *subdg = pair1.second;
-      for (auto pair2: subdg->getBlocks()) {
-         auto bb = pair2.second;
-         bb->setSlice(sl_id);
-         for (auto pair3: *subdg) {
-           dg::LLVMNode *n = pair3.second;
-           n->setSlice(sl_id);
-         }
-      }
+//      tm.stop();
+//      tm.report("INFO: Finding dependent nodes took");
+      return true;
     }
-    return true;
+    return false;
   }
 
-    bool slice() {
+  bool slice(const std::vector<unsigned> &path, std::vector<unsigned> &slice) {
+
     assert(slice_id != 0 && "Must run mark() method before slice()");
 
     dg::debug::TimeMeasure tm;
 
-    tm.start();
+    slice.reserve(path.size());
+    for (unsigned marker: path) {
+      auto itr = mapMarkers.find(marker);
+      if (itr != mapMarkers.end()) {
+        const llvm::BasicBlock *bb = itr->second;
+//        dg::LLVMBBlock *n = _dg->getNode(const_cast<llvm::BasicBlock*>(bb));
+
+      }
+    }
+
+//    tm.start();
 //    slicer.slice(_dg.get(), nullptr, slice_id);
 
-    tm.stop();
-    tm.report("INFO: Slicing dependence graph took");
+//    tm.stop();
+//    tm.report("INFO: Slicing dependence graph took");
 
     dg::analysis::SlicerStatistics &st = slicer.getStatistics();
     llvm::errs() << "INFO: Sliced away " << st.nodesRemoved

@@ -71,24 +71,23 @@ void Slicer::constructMaps() {
 
   unsigned int mdkline = M->getMDKindID("klee.assemblyLine");
 
-  for (auto pair1: dg::getConstructedFunctions()) {
+  for (const llvm::Function &fn: *M) {
+    for (const llvm::BasicBlock &bb: fn) {
 
-    dg::LLVMDependenceGraph *subdg = pair1.second;
-    for (auto pair2: subdg->getBlocks()) {
-      auto bb = pair2.second;
-      for (auto pair3: *subdg) {
-        dg::LLVMNode *n = pair3.second;
-        if (llvm::Instruction *i = llvm::dyn_cast<llvm::Instruction>(pair3.first)) {
+      bool marked = false;
+      for (const llvm::Instruction &i: bb) {
 
-          // look for klee line number metadata
-          if (llvm::MDNode *md = i->getMetadata(mdkline)) {
-            std::string line = llvm::cast<llvm::MDString>(md->getOperand(0))->getString().str();
-            mapKleeIDs[std::stoi(line)] = pair3.second;
-          }
+        // look for klee line number metadata
+        if (llvm::MDNode *md = i.getMetadata(mdkline)) {
+          std::string line = llvm::cast<llvm::MDString>(md->getOperand(0))->getString().str();
+          mapKleeIDs[std::stoi(line)] = &i;
+        }
+
+        if (!marked) {
 
           // check for a marker call
-          if (llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(i)) {
-            llvm::CallSite cs(ci);
+          if (const llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(&i)) {
+            llvm::CallSite cs(const_cast<llvm::CallInst*>(ci));
             const llvm::Function *targetFn = cs.getCalledFunction();
 
             // two arguments returning void
@@ -105,7 +104,8 @@ void Slicer::constructMaps() {
                   unsigned fnID = (unsigned) arg0->getUniqueInteger().getZExtValue();
                   unsigned bbID = (unsigned) arg1->getUniqueInteger().getZExtValue();
                   unsigned marker = (fnID * 1000) + bbID;
-                  mapMarkers[marker] = bb;
+                  mapMarkers[marker] = &bb;
+                  marked = true;
                 }
               }
             }
@@ -210,13 +210,15 @@ int main(int argc, char *argv[]) {
 
           outs() << fname << '\n';
 
+          unsigned counter = 0;
           unsigned criteria;
           std::vector<unsigned> trace;
           if (retrieve_testcase(test_file.path().string(), criteria, trace)) {
 
-//            slicer.resetSlices();
-//            slicer.mark(criteria);
-//            slicer.slice();
+            std::vector<unsigned> slice;
+            slicer.setSliceID(++counter);
+            slicer.mark(criteria);
+            slicer.slice(trace, slice);
           }
         }
       }
