@@ -159,7 +159,8 @@ public:
         if (!ensureFile(new_file))
             return false;
 
-        const std::map<llvm::Function*,LLVMDependenceGraph*> &CF = getConstructedFunctions();
+        const std::map<llvm::Value *,
+                       LLVMDependenceGraph *>& CF = getConstructedFunctions();
 
         start();
 
@@ -222,7 +223,8 @@ public:
         if (!ensureFile(new_file))
             return false;
 
-        const std::map<llvm::Function*,LLVMDependenceGraph*> &CF = getConstructedFunctions();
+        const std::map<llvm::Value *,
+                       LLVMDependenceGraph *>& CF = getConstructedFunctions();
 
         start();
 

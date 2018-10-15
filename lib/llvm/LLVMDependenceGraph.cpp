@@ -58,9 +58,10 @@ namespace dg {
 /// ------------------------------------------------------------------
 
 // map of all constructed functions
-std::map<llvm::Function*,LLVMDependenceGraph*> constructedFunctions;
+std::map<llvm::Value *, LLVMDependenceGraph *> constructedFunctions;
 
-const std::map<llvm::Function*,LLVMDependenceGraph*> &getConstructedFunctions()
+const std::map<llvm::Value *,
+               LLVMDependenceGraph *>& getConstructedFunctions()
 {
     return constructedFunctions;
 }

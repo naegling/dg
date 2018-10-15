@@ -32,7 +32,8 @@ void LLVMDependenceGraph::computePostDominators(bool addPostDomFrontiers)
 
         // root of post-dominator tree
         LLVMBBlock *root = nullptr;
-        Function &f = *const_cast<Function*>(F.first);;
+        Value *val = const_cast<Value *>(F.first);
+        Function& f = *cast<Function>(val);
         PostDominatorTree *pdtree;
 
 #if ((LLVM_VERSION_MAJOR == 3) && (LLVM_VERSION_MINOR < 9))
