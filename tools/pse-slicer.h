@@ -47,6 +47,8 @@ class Slicer {
 
   std::map<unsigned,const llvm::BasicBlock*> mapMarkers;
   std::map<unsigned,const llvm::Instruction*> mapKleeIDs;
+  unsigned calc_marker_length(unsigned marker);
+  unsigned is_marker(const llvm::Instruction *i);
 
   void constructMaps();
 
@@ -70,13 +72,12 @@ public:
     auto itr = mapKleeIDs.find(klee_id);
     if (itr != mapKleeIDs.end()) {
 
-
-      dg::LLVMNode *criteria = nullptr;
-
       const llvm::Instruction *i = itr->second;
-      for (const auto &fn: dg::getConstructedFunctions()) {
-        auto dg = fn.second;
-        criteria = dg->getNode(const_cast<llvm::Instruction*>(i));
+      const llvm::Function *fn = i->getParent()->getParent();
+      auto fnitr = dg::getConstructedFunctions().find(const_cast<llvm::Function*>(fn));
+      if (fnitr != dg::getConstructedFunctions().end()) {
+        auto dg = fnitr->second;
+        dg::LLVMNode *criteria = dg->getNode(const_cast<llvm::Instruction*>(i));
         if (criteria != nullptr) {
           slice_id = slicer.mark(criteria, slice_id, false);
           assert(slice_id != 0 && "Something went wrong when marking nodes");
@@ -93,13 +94,36 @@ public:
 
     dg::debug::TimeMeasure tm;
 
+    // copy markers into the path if both the fn and basic block are in the slice
     slice.reserve(path.size());
     for (unsigned marker: path) {
       auto itr = mapMarkers.find(marker);
       if (itr != mapMarkers.end()) {
-        const llvm::BasicBlock *bb = itr->second;
-//        dg::LLVMBBlock *n = _dg->getNode(const_cast<llvm::BasicBlock*>(bb));
 
+        // find basicblock for marker value
+        const llvm::BasicBlock *bb = itr->second;
+        const llvm::Function *fn = bb->getParent();
+
+        // first find function for this basicblock
+        auto fnitr = dg::getConstructedFunctions().find(const_cast<llvm::Function*>(fn));
+        if (fnitr != dg::getConstructedFunctions().end()) {
+          auto &dg = fnitr->second;
+
+          // check if function is in the slice
+          if (dg->getSlice() == slice_id) {
+
+            // get the llvmbblock for this basicblock
+            auto bbitr = dg->getBlocks().find(const_cast<llvm::BasicBlock *>(bb));
+            if (bbitr != dg->getBlocks().end()) {
+              dg::LLVMBBlock *block = bbitr->second;
+
+              // if this block is in the slice then include marker in path
+              if (block->getSlice() == slice_id) {
+                slice.push_back(marker);
+              }
+            }
+          }
+        }
       }
     }
 
@@ -109,11 +133,14 @@ public:
 //    tm.stop();
 //    tm.report("INFO: Slicing dependence graph took");
 
-    dg::analysis::SlicerStatistics &st = slicer.getStatistics();
-    llvm::errs() << "INFO: Sliced away " << st.nodesRemoved
-                 << " from " << st.nodesTotal << " nodes in DG\n";
+//    dg::analysis::SlicerStatistics &st = slicer.getStatistics();
+//    llvm::errs() << "INFO: Sliced away " << st.nodesRemoved
+//                 << " from " << st.nodesTotal << " nodes in DG\n";
     return true;
   }
+
+  unsigned sliceInstrLength(const std::vector<unsigned> &slice);
+  void diag_dump();
 
   bool buildDG() {
     _dg = std::move(_builder.constructCFGOnly());

@@ -17,7 +17,7 @@ llvm::cl::OptionCategory SlicingOpts("Slicer options", "");
 
 // Use LLVM's CommandLine library to parse
 // command line arguments
-SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
+void parseSlicerOptions(int argc, char *argv[], SlicerOptions &options) {
   llvm::cl::opt<std::string> outputFile("o",
                                         llvm::cl::desc("Save the output to given file. If not specified,\n"
                                                        "a .sliced suffix is used with the original module name."),
@@ -62,6 +62,10 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
   llvm::cl::opt<std::string> entryFunction("entry",
                                            llvm::cl::desc("Entry function of the program\n"),
                                            llvm::cl::init("main"), llvm::cl::cat(SlicingOpts));
+
+  llvm::cl::opt<bool> includeSlice("include-slice",
+                                   llvm::cl::desc("include sliced path in output\n"),
+                                   llvm::cl::init(false), llvm::cl::cat(SlicingOpts));
 
   llvm::cl::opt<std::string> testDirectory("tests",
                                            llvm::cl::desc("directory containing test case json files\n"),
@@ -120,12 +124,10 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
   llvm::cl::SetVersionPrinter([](llvm::raw_ostream &) { printf("%s\n", GIT_VERSION); });
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  /// Fill the structure
-  SlicerOptions options;
-
   options.inputFile = inputFile;
   options.outputFile = outputFile;
   options.testDirectory = testDirectory;
+  options.includeSlice = includeSlice;
 
   options.dgOptions.entryFunction = entryFunction;
   options.dgOptions.PTAOptions.entryFunction = entryFunction;
@@ -140,7 +142,5 @@ SlicerOptions parseSlicerOptions(int argc, char *argv[]) {
   // FIXME: add classes for CD and DEF-USE settings
   options.dgOptions.cdAlgorithm = cdAlgorithm;
   options.dgOptions.DUUndefinedArePure = undefinedArePure;
-
-  return options;
 }
 

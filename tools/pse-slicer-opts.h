@@ -14,11 +14,12 @@ struct SlicerOptions {
   std::string inputFile{};
   std::string outputFile{};
   std::string testDirectory{};
+  bool includeSlice{};
 };
 
 ///
 // Return filled SlicerOptions structure.
-SlicerOptions parseSlicerOptions(int argc, char *argv[]);
+void parseSlicerOptions(int argc, char *argv[], SlicerOptions &opts);
 
 #endif  // _DG_TOOLS_PSE_SLICER_OPTS_H_
 

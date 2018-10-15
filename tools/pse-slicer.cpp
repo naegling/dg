@@ -84,30 +84,142 @@ void Slicer::constructMaps() {
         }
 
         if (!marked) {
+          unsigned marker = is_marker(&i);
+          if (marker != 0) {
+            mapMarkers[marker] = &bb;
+            marked = true;
+          }
+        }
+      }
+    }
+  }
+}
 
-          // check for a marker call
-          if (const llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(&i)) {
-            llvm::CallSite cs(const_cast<llvm::CallInst*>(ci));
-            const llvm::Function *targetFn = cs.getCalledFunction();
+unsigned Slicer::is_marker(const llvm::Instruction *i) {
 
-            // two arguments returning void
-            if (targetFn->arg_size() == 2 && targetFn->getReturnType()->isVoidTy()) {
+  unsigned result = 0;
+  if (const llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(i)) {
+    llvm::CallSite cs(const_cast<llvm::CallInst*>(ci));
+    const llvm::Function *targetFn = cs.getCalledFunction();
 
-              // check the name
-              std::string targetName = targetFn->getName().str();
-              boost::algorithm::to_lower(targetName);
-              if (targetName == "mark") {
+    // two arguments returning void
+    if (targetFn->arg_size() == 2 && targetFn->getReturnType()->isVoidTy()) {
 
-                const llvm::Constant *arg0 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(0));
-                const llvm::Constant *arg1 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(1));
-                if ((arg0 != nullptr) && (arg1 != nullptr)) {
-                  unsigned fnID = (unsigned) arg0->getUniqueInteger().getZExtValue();
-                  unsigned bbID = (unsigned) arg1->getUniqueInteger().getZExtValue();
-                  unsigned marker = (fnID * 1000) + bbID;
-                  mapMarkers[marker] = &bb;
-                  marked = true;
+      // check the name
+      std::string targetName = targetFn->getName().str();
+      boost::algorithm::to_lower(targetName);
+      if (targetName == "mark") {
+
+        const llvm::Constant *arg0 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(0));
+        const llvm::Constant *arg1 = llvm::dyn_cast<llvm::Constant>(cs.getArgument(1));
+        if ((arg0 != nullptr) && (arg1 != nullptr)) {
+          unsigned fnID = (unsigned) arg0->getUniqueInteger().getZExtValue();
+          unsigned bbID = (unsigned) arg1->getUniqueInteger().getZExtValue();
+          result = (fnID * 1000) + bbID;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+unsigned Slicer::calc_marker_length(unsigned marker) {
+
+  unsigned result = 0;
+
+  auto mkitr = mapMarkers.find(marker);
+  assert(mkitr != mapMarkers.end());
+
+  // find basicblock for marker value
+  const llvm::BasicBlock *bb = mkitr->second;
+  const llvm::Function *fn = bb->getParent();
+
+  // first find function for this basicblock
+  auto fnitr = dg::getConstructedFunctions().find(const_cast<llvm::Function*>(fn));
+  assert(fnitr != dg::getConstructedFunctions().end());
+
+  auto &dg = fnitr->second;
+  assert(dg != nullptr && dg->getSlice() == slice_id);
+
+  auto bbitr = dg->getBlocks().find(const_cast<llvm::BasicBlock *>(bb));
+  assert(bbitr != dg->getBlocks().end());
+
+  dg::LLVMBBlock *block = bbitr->second;
+  assert(block != nullptr && block->getSlice() == slice_id);
+
+  for (const auto &node : block->getNodes()) {
+
+    // count nodes in the slice that are not marker calls
+    if (node->getSlice() == slice_id) {
+      llvm::Value *val = node->getKey();
+      if (llvm::Instruction *i = llvm::dyn_cast<llvm::Instruction>(val)) {
+        if (is_marker(i) == 0) {
+          result += 1;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+unsigned Slicer::sliceInstrLength(const std::vector<unsigned> &slice) {
+
+  unsigned result = 0;
+  std::map<unsigned,unsigned> marker_lengths;
+
+  for (unsigned marker: slice) {
+    auto itr = marker_lengths.find(marker);
+    if (itr == marker_lengths.end()) {
+      unsigned length = calc_marker_length(marker);
+      result += length;
+      marker_lengths.insert(std::make_pair(marker, length));
+    } else {
+      result += itr->second;
+    }
+  }
+  return result;
+}
+
+void Slicer::diag_dump() {
+
+  unsigned int mdkline = M->getMDKindID("klee.assemblyLine");
+  for (auto fnitr: getConstructedFunctions()) {
+    const llvm::Function *fn = llvm::dyn_cast<llvm::Function>(fnitr.first);
+    if (fn != nullptr) {
+      auto dg = fnitr.second;
+      if (dg->getSlice() == slice_id) {
+        outs() << "Fn: " << fn->getName().str() << "\n";
+
+        for (auto &bb : *fn) {
+
+          auto bbitr = dg->getBlocks().find(const_cast<llvm::BasicBlock *>(&bb));
+          if (bbitr != dg->getBlocks().end()) {
+            dg::LLVMBBlock *block = bbitr->second;
+            if (block->getSlice() == slice_id) {
+
+              unsigned marker = 0;
+              for (auto pair: mapMarkers) {
+                if (pair.second == &bb) {
+                  marker = pair.first;
+                  break;
                 }
               }
+              outs() << marker << ":";
+              unsigned counter = 0;
+              for (auto &i : bb) {
+                dg::LLVMNode *node = dg->getNode(const_cast<llvm::Instruction*>(&i));
+                if (node->getSlice() == slice_id) {
+                  if (llvm::MDNode *md = i.getMetadata(mdkline)) {
+                    std::string line = llvm::cast<llvm::MDString>(md->getOperand(0))->getString().str();
+                    if (counter++ > 0) {
+                      outs() << ",";
+                    }
+                    outs() << line;
+                  }
+                }
+              }
+              outs() << "\n";
             }
           }
         }
@@ -165,10 +277,46 @@ bool retrieve_testcase(std::string filename, unsigned &criteria, std::vector<uns
   return result;
 }
 
+class Emitter {
+
+  llvm::raw_ostream &output;
+  bool include_slice;
+  unsigned counter;
+
+public:
+
+  Emitter(llvm::raw_ostream &o, bool b) : output(o), include_slice(b), counter(0)
+              { output << "[\n"; }
+  ~Emitter()  { output << "\n]\n"; }
+  void write_case(std::string name, const std::vector<unsigned> &slice, unsigned instr_length) {
+    if (counter++ > 0) {
+      output << ",\n";
+    }
+    output << "  {\n";
+    output << "    \"testcase\": \"" << name << "\",\n";
+    if (include_slice) {
+      output << "    \"slice\": " << "[";
+      for (auto itr = slice.begin(), start = slice.begin(), end = slice.end(); itr != end; ++itr) {
+        if (itr != start) {
+          output << ",";
+        }
+        output << *itr;
+      }
+      output << "],\n";
+    }
+    output << "    \"sliceLength\": " << slice.size() << ",\n";
+    output << "    \"instrLength\": " << instr_length << "\n";
+    output << "  }";
+  }
+
+};
+
 int main(int argc, char *argv[]) {
 
   setupStackTraceOnError(argc, argv);
-  SlicerOptions options = parseSlicerOptions(argc, argv);
+  SlicerOptions options;
+  parseSlicerOptions(argc, argv, options);
+  llvm::raw_ostream *output = &outs();
 
   llvm::LLVMContext context;
   std::unique_ptr<llvm::Module> M = parseModule(context, options);
@@ -182,8 +330,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-
-
   /// ---------------
   // slice the code
   /// ---------------
@@ -196,6 +342,15 @@ int main(int argc, char *argv[]) {
 
   path test_dir(options.testDirectory);
   if (is_directory(test_dir)) {
+
+    // create an output stream if outfile is specified
+    // else, just use outs
+    if (!options.outputFile.empty()) {
+      std::error_code ec;
+      output = new llvm::raw_fd_ostream(options.outputFile, ec, llvm::sys::fs::F_None);
+    }
+
+    Emitter emitter(*output, options.includeSlice);
 
     const std::string test_ext = ".json";
     const std::string test_start = "test";
@@ -219,6 +374,8 @@ int main(int argc, char *argv[]) {
             slicer.setSliceID(++counter);
             slicer.mark(criteria);
             slicer.slice(trace, slice);
+            emitter.write_case(fname, slice, slicer.sliceInstrLength(slice));
+//          slicer.diag_dump();
           }
         }
       }
@@ -226,6 +383,10 @@ int main(int argc, char *argv[]) {
 
   } else {
     errs() << "ERROR: test case directory not found: " << options.testDirectory << "\n";
+  }
+
+  if (output != &outs()) {
+    delete output;
   }
 
   return 0;
