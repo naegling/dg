@@ -70,20 +70,19 @@ public:
     auto itr = mapKleeIDs.find(klee_id);
     if (itr != mapKleeIDs.end()) {
 
+
+      dg::LLVMNode *criteria = nullptr;
+
       const llvm::Instruction *i = itr->second;
-      dg::LLVMNode *criteria = _dg->getNode(const_cast<llvm::Instruction*>(i));
-
-      // start marking
-//      dg::debug::TimeMeasure tm;
-
-//      tm.start();
-      slice_id = slicer.mark(criteria, slice_id, false);
-
-      assert(slice_id != 0 && "Something went wrong when marking nodes");
-
-//      tm.stop();
-//      tm.report("INFO: Finding dependent nodes took");
-      return true;
+      for (const auto &fn: dg::getConstructedFunctions()) {
+        auto dg = fn.second;
+        criteria = dg->getNode(const_cast<llvm::Instruction*>(i));
+        if (criteria != nullptr) {
+          slice_id = slicer.mark(criteria, slice_id, false);
+          assert(slice_id != 0 && "Something went wrong when marking nodes");
+          return true;
+        }
+      }
     }
     return false;
   }

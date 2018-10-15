@@ -34,17 +34,6 @@ if (LLVM_DG)
 				PRIVATE ${llvm_core})
 	add_dependencies(llvm-slicer gitversion)
 
-	add_executable(trial-slicer trial-slicer.cpp
-				   llvm-slicer-opts.cpp llvm-slicer-opts.h)
-	target_link_libraries(trial-slicer PRIVATE LLVMdg)
-	target_link_libraries(trial-slicer
-				PRIVATE ${llvm_irreader}
-				PRIVATE ${llvm_bitwriter}
-				PRIVATE ${llvm_analysis}
-				PRIVATE ${llvm_support}
-				PRIVATE ${llvm_core})
-	add_dependencies(trial-slicer gitversion)
-
 	add_executable(pse-slicer pse-slicer.cpp
 				  jsoncpp.cpp pse-slicer-opts.cpp pse-slicer-opts.h)
 	target_link_libraries(pse-slicer PRIVATE LLVMdg)

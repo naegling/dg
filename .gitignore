@@ -94,3 +94,7 @@ cmake-build-*/
 
 # File-based project format
 *.iws
+
+# source trail database files
+*.srctrlbm
+*.srctrldb
