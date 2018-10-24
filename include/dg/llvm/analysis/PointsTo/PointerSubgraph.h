@@ -89,9 +89,11 @@ class LLVMPointerSubgraphBuilder
     Subgraph& buildFunction(const llvm::Function& F);
     PSNodesSeq buildInstruction(const llvm::Instruction&);
 
-    PSNodesSeq buildPointerSubgraphBlock(const llvm::BasicBlock& block);
+    PSNodesSeq buildPointerSubgraphBlock(const llvm::BasicBlock& block,
+                                         PSNode *parent);
 
-    void buildArguments(const llvm::Function& F);
+    void buildArguments(const llvm::Function& F,
+                        PSNode *parent);
     PSNodesSeq buildArgumentsStructure(const llvm::Function& F);
     PSNodesSeq buildGlobals();
 
@@ -137,6 +139,8 @@ public:
     // map the points-to informatio back to LLVM nodes
     const std::unordered_map<const llvm::Value *, PSNodesSeq>&
                                 getNodesMap() const { return nodes_map; }
+
+    std::vector<PSNode *> getFunctionNodes(const llvm::Function *F) const;
 
     // this is the same as the getNode, but it
     // creates ConstantExpr
@@ -267,13 +271,14 @@ private:
 
     void addReturnNodeOperands(const llvm::Function *F,
                                PSNode *ret,
-                               const llvm::CallInst *CI = nullptr);
+                               PSNode *callNode = nullptr);
 
-    void addReturnNodeOperand(const llvm::CallInst *CI, PSNode *op);
+    void addReturnNodeOperand(PSNode *callNode, PSNode *op);
     void addReturnNodeOperand(const llvm::Function *F, PSNode *op);
     void addInterproceduralOperands(const llvm::Function *F,
                                     Subgraph& subg,
-                                    const llvm::CallInst *CI = nullptr);
+                                    const llvm::CallInst *CI = nullptr,
+                                    PSNode *callNode = nullptr);
 
     PSNodesSeq createExtract(const llvm::Instruction *Inst);
     PSNodesSeq createCall(const llvm::Instruction *Inst);

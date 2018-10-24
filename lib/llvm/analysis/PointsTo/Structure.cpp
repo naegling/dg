@@ -248,14 +248,6 @@ void LLVMPointerSubgraphBuilder::addProgramStructure(const llvm::Function *F,
         r->addSuccessor(subg.ret);
     }
 
-    // set parents of nodes
-    // FIXME: we should do this when creating the nodes
-    std::set<PSNode *> cont;
-    getNodes(cont, subg.root, subg.ret, 0xdead);
-    for (PSNode* n : cont) {
-        n->setParent(subg.root);
-    }
-
     subg.has_structure = true;
 }
 
